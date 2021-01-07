@@ -1,4 +1,3 @@
-from comet_ml import Experiment
 # morel imports
 from morel.models.Dynamics import DynamicsEnsemble
 from morel.models.Policy import PPO2
@@ -10,19 +9,12 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, Dataset
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-
-experiment = Experiment(
-    api_key="roUfs00hpDDbntO56E1FrQ29b",
-    project_name="ppo2-debugging",
-    workspace="swapnilpande",
-)
-experiment.set_name("var_exp_act")
-
 class Morel():
-    def __init__(self, obs_dim, action_dim):
+    def __init__(self, obs_dim, action_dim, tensorboard_writer = None, comet_experiment = None):
         # self.dynamics = DynamicsEnsemble(obs_dim + action_dim, obs_dim)
+
+        self.tensorboard_writer = tensorboard_writer
+        self.comet_experiment = comet_experiment
 
         self.policy = PPO2(obs_dim, action_dim)
 
@@ -37,7 +29,7 @@ class Morel():
         print("---------------- Ending Dynamics Training ----------------")
 
         print("---------------- Beginning Policy Training ----------------")
-        self.policy.train(env, experiment, summary_writer = writer)
+        self.policy.train(env, summary_writer = self.tensorboard_writer, comet_experiment = self.comet_experiment)
 
 
 

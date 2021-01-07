@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from tqdm import tqdm
+import numpy as np
+import scipy.spatial
+
 class DynamicsNet(nn.Module):
     def __init__(self, input_dim, output_dim, n_neurons = 512, activation = nn.ReLU):
         super(DynamicsNet, self).__init__()
@@ -37,17 +41,75 @@ class DynamicsNet(nn.Module):
         return x
 
 class DynamicsEnsemble():
-    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, n_layers = 2, activation = nn.ReLU):
+    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, n_layers = 2, activation = nn.ReLU, cuda = True):
         self.n_models = 4
 
         self.models = []
 
         for i in range(n_models):
-            self.models.append(DynamicsNet(input_dim,
+            if(cuda):
+                self.models.append(DynamicsNet(input_dim,
                                             output_dim,
                                             n_neurons = n_neurons,
-                                            n_layers = n_layers,
-                                            activation = nn.ReLu))
+                                            activation = activation).cuda())
+            else:
+                self.models.append(DynamicsNet(input_dim,
+                                            output_dim,
+                                            n_neurons = n_neurons,
+                                            activation = activation))
 
     def forward(self, model, x):
         return self.models[model](x)
+
+    def train_step(self, model_idx, feed, target):
+        # Reset Gradients
+        self.optimizers[model_idx].zero_grad()
+
+        # Feed forward
+        next_state_pred = self.models[model_idx](feed)
+        output = self.losses[model_idx](next_state_pred, target)
+
+        # Feed backwards
+        output.backward()
+
+        # Weight update
+        self.optimizers[model_idx].step()
+
+        # Tensorboard
+        return output
+
+
+    def train(self, dataloader, epochs = 5, optimizer = torch.optim.Adam, loss = nn.MSELoss, summary_writer = None):
+        # Define optimizers and loss functions
+        self.optimizers = [None] * self.n_models
+        self.losses = [None] * self.n_models
+
+        for i in range(self.n_models):
+            self.optimizers[i] = optimizer(self.models[i].parameters())
+            self.losses[i] = loss()
+
+        # Start training loop
+        for epoch in range(epochs):
+            for i, batch in enumerate(tqdm(dataloader)):
+                # Split batch into input and output
+                feed, target = batch
+
+                loss_vals = list(map(lambda i: self.train_step(i, feed, target), range(self.n_models)))
+
+                # Tensorboard
+                if(summary_writer is not None):
+                    for j, loss_val in enumerate(loss_vals):
+                        summary_writer.add_scalar('Loss/dynamics_{}'.format(j), loss_val, epoch*len(dataloader) + i)
+
+
+    def usad(self, x):
+        # Generate prediction of next state using dynamics model
+        predictions = np.array(list(map(lambda i: self.forward(i, x).cpu().detach().numpy(), range(self.n_models))))
+
+        # Compute the pairwise distances between all predictions
+        distances = scipy.spatial.distance_matrix(predictions, predictions)
+
+        # If maximum is greater than threshold, return true
+        return np.amax(distances) > self.threshold
+
+

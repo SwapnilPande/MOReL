@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-class PolicyNet(nn.Module):
+class ActorCriticPolicy(nn.Module):
     def __init__(self, input_dim,
                 output_dim,
                 n_neurons = 64,
@@ -16,7 +16,7 @@ class PolicyNet(nn.Module):
         assert output_dim > 0
         assert n_neurons > 0
 
-        super(PolicyNet, self).__init__()
+        super(ActorCriticPolicy, self).__init__()
 
         # Store configuration parameters
         self.input_dim = input_dim
@@ -24,14 +24,14 @@ class PolicyNet(nn.Module):
         self.n_neurons = n_neurons
         self.distribution = distribution
 
-        # Create layers for the net
-        self.input_layer = nn.Linear(input_dim, n_neurons)
+        # Policy Network
         self.h0 = nn.Linear(n_neurons, n_neurons)
         self.h0_act = activation()
         self.h1 = nn.Linear(n_neurons, n_neurons)
         self.h1_act = activation()
         self.output_layer = nn.Linear(n_neurons, output_dim)
 
+        # Value Network
         self.h0v = nn.Linear(n_neurons, n_neurons)
         self.h0_actv = activation()
         self.h1v = nn.Linear(n_neurons, n_neurons)
@@ -44,94 +44,95 @@ class PolicyNet(nn.Module):
         # self.var_activation = nn.Softplus()
 
     def forward(self, obs, action = None):
-
-        i = self.input_layer(obs)
-        x = self.h0(i)
+        # Policy Forward Pass
+        x = self.h0(obs)
         x = self.h0_act(x)
         x = self.h1(x)
         x = self.h1_act(x)
         action_logit = self.output_layer(x)
-        mean = action_logit[:,0:self.output_dim]
-        var_logits = action_logit[:,self.output_dim:]
 
-        x = self.h0v(i)
+        # Generate action distribution
+        #TODO Add Support for additional distributions
+        mean = action_logit[:,0:self.output_dim]
+        var = torch.exp(self.var)
+        action_dist = self.distribution(mean, torch.diag_embed(var))
+
+        # Sample action if not passed as argument to function
+        # Action is passed when doing policy updates
+        if action is None:
+            action = action_dist.sample()
+
+        neg_log_prob = action_dist.log_prob(action) * -1.
+        entropy = action_dist.entropy()
+
+        # Value Forward Pass
+        x = self.h0v(obs)
         x = self.h0_actv(x)
         x = self.h1v(x)
         x = self.h1_actv(x)
         value = self.value_head(x)
 
-        # print(self.var)
-        # mean = self.mean_activation(mean_logits)
-        # var = self.var_activation(self.var)
-        var = torch.exp(self.var)
-
-        action_dist = self.distribution(mean, torch.diag_embed(var))
-
-
-        if action is None:
-            action = action_dist.sample()
-
-
-
-        neg_log_prob = action_dist.log_prob(action) * -1.
-        # print(neg_log_prob)
-        entropy = action_dist.entropy()
-        # print(entropy)
-
-
         return action, neg_log_prob, entropy, value
-
-class ValueNet(nn.Module):
-    def __init__(self, input_dim, n_neurons = 512, activation = nn.ReLU):
-        # Validate inputs
-        assert input_dim > 0
-        assert n_neurons > 0
-
-        super(ValueNet, self).__init__()
-
-        # Store configuration parameters
-        self.input_dim = input_dim
-        self.n_neurons = n_neurons
-
-        # Create layers for the net
-        self.input_layer = nn.Linear(input_dim, n_neurons)
-        self.h0 = nn.Linear(n_neurons, n_neurons)
-        self.h0_act = activation()
-        self.h1 = nn.Linear(n_neurons, n_neurons)
-        self.h1_act = activation()
-        self.output_layer = nn.Linear(n_neurons, 1)
-
-    def forward(self, x):
-        x = self.input_layer(x)
-        x = self.h0(x)
-        x = self.h0_act(x)
-        x = self.h1(x)
-        x = self.h1_act(x)
-        x = self.output_layer(x)
-
-        return x
 
 class PPO2():
-    def __init__(self, input_dim, output_dim, cuda = True):
+    def __init__(self, input_dim, output_dim, device = "cuda:0"):
+        """Initializes a PPO2 Policy.
 
-        # Instantiate Networks
-        if(cuda):
-            self.policy_net = PolicyNet(input_dim, output_dim, n_neurons=64).cuda()
-            # self.value_net = ValueNet(input_dim).cuda()
-        else:
-            self.policy_net = PolicyNet(input_dim, output_dim)
-            # self.value_net = ValueNet(input_dim)
+        Currently only has support for continuous action spaces.
+        #TODO add support for discrete action spaces
+
+        Args:
+            input_dim: Dimension of observation
+            output_dim: Dimension of action space
+            device (str, optional): Device on which to allocate tensors. Defaults to "cuda:0".
+        """
+        # Store device on which to allocate tensors
+        self.device = device
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        # Instantiate Actor Critic Policy
+        self.policy = ActorCriticPolicy(input_dim, output_dim, n_neurons=64).to(self.device)
 
     def forward(self, observation, action = None):
-        observation = torch.tensor(observation).float().cuda()
+        """Performs a forward pass using the policy network
 
-        action, neg_log_prob, entropy, value = self.policy_net(observation, action = action)
+        Args:
+            observation: torch tensor of dim (?,self.input_dim) containing observation.
+            action (optional): Selected action of dim (?, self.output_dim) for which to calculate neg_log_prob of policy. If None, samples
+            probability distribution to select action. Defaults to None.
 
-        #value = self.value_net(observation)
+        Returns:
+            action: Selected action of dim (?, self.output_dim)
+            neg_log_prob: Negative log probability of selected action (?,)
+            entropy: Entropy of output distribution (?,)
+            value: Estimated value of state (?,)
+        """
 
-        return action, neg_log_prob, entropy, value
+        return self.policy(observation, action = action)
 
     def generate_experience(self, env, n_steps, gamma, lam):
+        """Generates an experience rollout by querying the environment and passing actions generated by current policy.
+
+        Args:
+            env: Gym environment to generate experience from. Note this gym environment does need need to have the full API
+                defined by a gym environment. It only uses the reset() and step functions. reset() only needs to return the
+                next observation and step only needs to return the reward and next observation.
+            n_steps: The number of steps to execute for rollout
+            gamma: Discount factor used for generalized advantage estimate
+            lam: Discount factor used for generalized advantage estimate
+
+        Returns:
+            mb_rewards: Reward collected at every time step
+            mb_obs: Observation collected at every time step
+            mb_returns: Q value estimate at every time step
+            mb_done: Value of the "done" flag at every time step
+            mb_actions: Action selected by policy at every time step
+            mb_neg_log_prob: Negative log probability of selected action at every time step
+            episode_reward: List of total episode rewards for every completed episode
+        """
+
         # Create observation vector
         obs = np.expand_dims(env.reset(), 0)
         done = False
@@ -140,6 +141,7 @@ class PPO2():
         mb_obs, mb_rewards, mb_actions, mb_values, mb_done, mb_neg_log_prob = [],[],[],[],[],[]
         ep_infos = []
         total_reward = 0
+
         # For n in range number of steps
         with torch.set_grad_enabled(False):
             for i in range(n_steps):
@@ -149,14 +151,12 @@ class PPO2():
                     ep_infos.append(total_reward)
 
                 # Choose action
-                action, neg_log_prob, _, value = self.forward(obs)
+                action, neg_log_prob, _, value = self.forward(observation = torch.tensor(obs).float().to(self.device))
 
                 # Retrieve values
                 action = np.squeeze(action.cpu().numpy())
                 neg_log_prob = np.squeeze(neg_log_prob.cpu().numpy())
                 value = np.squeeze(value.cpu().numpy())
-
-
 
                 # Append data from step to memory buffer
                 mb_obs.append(obs.copy())
@@ -170,7 +170,6 @@ class PPO2():
                 obs = np.expand_dims(obs, 0)
                 total_reward += rewards
 
-
                 # Append reward to memory buffer as well
                 mb_rewards.append(rewards)
 
@@ -183,7 +182,7 @@ class PPO2():
             mb_neg_log_prob = np.asarray(mb_neg_log_prob, dtype=np.float32)
             mb_done = np.asarray(mb_done, dtype=np.bool)
 
-            # get value function for last action
+            # get value function for last state
             _, _, _, last_value = self.forward(obs)
             last_value = last_value.cpu().numpy()
 
@@ -206,6 +205,7 @@ class PPO2():
 
             # compute value functions
             mb_returns = mb_advs + mb_values
+
         return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, ep_infos
 
     def train_step(self, clip_range,
@@ -217,12 +217,32 @@ class PPO2():
                         old_actions,
                         old_values,
                         old_neg_log_probs):
+        """Runs a single train step for the policy.
+
+        Args:
+            clip_range : Clip range for the value function and ratio in policy loss
+            entropy_coef: Coefficient for entropy loss in total loss function
+            value_coef: Coefficient for value loss in total loss function
+            obs: Observations at each time step of rollout (n_steps,self.input_dim)
+            returns: Estimated returns at each time step (n_steps, self.input_dim)
+            dones: Done flag at each time step(n_steps, 1)
+            old_actions: Action taken by agent at each time step (n_steps, self.output_dim)
+            old_values: Value estimate of policy used to generate action at each time step (n_steps, self.output_dim)
+            old_neg_log_probs: Negative log probabilities of actions for policy used to generate actions at each time step (n_steps, self.output_dim)
+
+        Returns:
+            loss: Total loss
+            pg_loss: Policy loss
+            value_loss: Value loss
+            entropy_mean: Entropy loss
+            approx_kl: Approximate KL Divergence between old and new policy
+        """
+
         # Create torch tensors and send to correct device
-        # obs = torch.tensor(obs).float().cuda()
-        returns = torch.tensor(returns).float().cuda()
-        old_actions = torch.tensor(old_actions).float().cuda()
-        old_values = torch.tensor(old_values).float().cuda()
-        old_neg_log_probs = torch.tensor(old_neg_log_probs).float().cuda()
+        returns = torch.tensor(returns).float().to(self.device)
+        old_actions = torch.tensor(old_actions).to(self.device)
+        old_values = torch.tensor(old_values).to(self.device)
+        old_neg_log_probs = torch.tensor(old_neg_log_probs).to(self.device)
 
         # Calculate and normalize the advantages
         with torch.set_grad_enabled(False):
@@ -231,11 +251,11 @@ class PPO2():
             # Normalize the advantages
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        self.policy_net.train()
-        # self.value_net.train()
+        # Set policy network to train mode
+        self.policy.train()
         with torch.set_grad_enabled(True):
             # Feed batch through policy network
-            actions, neg_log_probs, entropies, values = self.forward(obs, action = old_actions)
+            actions, neg_log_probs, entropies, values = self.forward(torch.tensor(obs).float().to(self.device), action = old_actions)
 
             loss, pg_loss, value_loss, entropy_mean, approx_kl = self.loss(clip_range,
                                                                             entropy_coef,
@@ -249,12 +269,9 @@ class PPO2():
                                                                              old_neg_log_probs)
 
             # Backprop from loss
-            # print(loss)
             loss.backward()
 
             return loss, pg_loss, value_loss, entropy_mean, approx_kl
-
-
 
 
     def train(self, env, experiment, optimizer = torch.optim.Adam,
@@ -264,67 +281,102 @@ class PPO2():
                                     clip_range = 0.2,
                                     entropy_coef = 0.01,
                                     value_coef = 0.5,
-                                    batch_size = 256,
+                                    num_batches = 4,
                                     gamma = 0.99,
                                     lam = 0.95,
                                     max_grad_norm = 0.5,
                                     num_train_epochs = 4,
+                                    comet_experiment = None,
                                     summary_writer = None):
+        """Entry point for training the policy.
 
-        # Report multiple hyperparameters using a dictionary:
-        hyper_params = {
-            "learning_rate":  lr,
-            "steps": 100000,
-            "n_steps (simulation)": n_steps,
-            "clip_range" : clip_range,
-            "max_grad_norm" : max_grad_norm,
-            "batch_size" : batch_size,
-            "gamma" : gamma,
-            "lam" : lam,
-            "num_train_epochs" : num_train_epochs,
-            "value_coef" : value_coef,
-            "entropy_coef" : entropy_coef
-        }
-        experiment.log_parameters(hyper_params)
+        The training routine is based off the the PPO2 implementation provided in the stable-baselines repo.
+        The default hyperparameters are also set to match those of stable baselines.
 
+        Args:
+            env: Gym environment to generate experience from. Note this gym environment does need need to have the full API
+                defined by a gym environment. It only uses the reset() and step functions. reset() only needs to return the
+                next observation and step only needs to return the reward and next observation.
+            optimizer (optional): Optimizer to optimize policy and value networks. Defaults to torch.optim.Adam.
+            lr (float, optional): Learning rate. Defaults to 0.00025.
+            n_steps (int, optional): Length of steps for rollouts from environment. Defaults to 1024.
+            time_steps (int, optional): Total number of steps of experience to collect. Defaults to 1e6.
+            clip_range (float, optional): Clip range for the value function and ratio in policy loss. Defaults to 0.2.
+            entropy_coef (float, optional): Coefficient for entropy loss in total loss function. Defaults to 0.01.
+            value_coef (float, optional): Coefficient for value loss in total loss function. Defaults to 0.5.
+            num_batches (int, optional): Number of batches to split rollout into. Defaults to 4.
+            gamma (float, optional): Discount factor used for generalized advantage estimate. Defaults to 0.99.
+            lam (float, optional): Discount factor used for generalized advantage estimate. Defaults to 0.95.
+            max_grad_norm (float, optional): Max gradient norm for gradient clipping. Defaults to 0.5.
+            num_train_epochs (int, optional): Number of epochs to train for after each new experience rollout is generated. Defaults to 4.
+            comet_experiment (optional) : A comet experiment object for logging. No logging if not passed. Defaults to None.
+            summary_writer (optional): A tensorboard summary writer for logging. No logging if not passed. Defaults to None.
+        """
+
+        # Report hyperparameters for training
+        if(comet_experiment is not None):
+
+            hyper_params = {
+                "learning_rate":  lr,
+                "steps": time_steps,
+                "n_steps (simulation)": n_steps,
+                "clip_range" : clip_range,
+                "max_grad_norm" : max_grad_norm,
+                "batch_size" : batch_size,
+                "gamma" : gamma,
+                "lam" : lam,
+                "num_train_epochs" : num_train_epochs,
+                "value_coef" : value_coef,
+                "entropy_coef" : entropy_coef
+            }
+            comet_experiment.log_parameters(hyper_params)
+
+        # Total number of train cycles to run
         n_updates = int(time_steps // n_steps)
 
-        self.policy_optim = optimizer(self.policy_net.parameters(), lr = lr)
-        # self.value_optim = optimizer(self.value_net.parameters(), lr = lr)
+        # Instantiate optimizer
+        self.policy_optim = optimizer(self.policy.parameters(), lr = lr)
 
         # main train loop
         for update in range(n_updates):
             # Collect new experiences using the current policy
-            rewards, obs, returns, dones, actions, values, neg_log_probs, infos = self.generate_experience(env, n_steps, gamma, lam)
+            rewards, obs, returns, dones, actions, values, neg_log_probs, episode_rewards = self.generate_experience(env, n_steps, gamma, lam)
             indices = np.arange(n_steps)
+
+            # Loop over train epochs
             for i in range(num_train_epochs):
                 # Shuffle order of data
                 np.random.shuffle(indices)
 
-                num_batches = n_steps//batch_size
-                if(n_steps % batch_size != 0):
-                    num_batches += 1
+                # Calculate size of each batch
+                batch_size = n_steps // num_batches
 
+                # If not evenly divisible, add 1 sample to each batch, last batch will automatically be smaller
+                if(n_steps % num_batches):
+                    batch_size +=1
+
+                # Loop over batches in single epoch
                 for batch_num in range(num_batches):
                     # Reset gradients
-                    self.policy_net.zero_grad()
-                    # self.value_net.zero_grad()
+                    self.policy.zero_grad()
 
+                    # Get indices for batch
                     if(batch_num != num_batches - 1):
                         batch_indices = indices[batch_num*batch_size:(batch_num + 1)*batch_size]
                     else:
                         batch_indices = indices[batch_num*batch_size:]
 
+                    # Generate batch
                     batch = (arr[batch_indices] for arr in (obs, returns, dones, actions, values, neg_log_probs))
+
+                    # Run train step on batch
                     loss, pg_loss, value_loss, entropy, approx_kl = self.train_step(clip_range, entropy_coef, value_coef, *batch)
 
                     # Clip gradients
-                    torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_grad_norm)
-                    # torch.nn.utils.clip_grad_norm_(self.value_net.parameters(), max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_grad_norm)
 
+                    # Run optimizer step
                     self.policy_optim.step()
-
-                    # self.value_optim.step()
 
             # Tensorboard
             if(summary_writer is not None):
@@ -334,18 +386,16 @@ class PPO2():
                 summary_writer.add_scalar('Loss/value', value_loss, update*n_steps)
                 summary_writer.add_scalar('Metrics/entropy', entropy, update*n_steps)
                 summary_writer.add_scalar('Metrics/approx_kl', approx_kl, update*n_steps)
-                summary_writer.add_scalar('Metrics/max_reward', sum(infos)/len(infos), update*n_steps)
+                summary_writer.add_scalar('Metrics/max_reward', sum(episode_rewards)/len(episode_rewards), update*n_steps)
 
-            experiment.log_metric('total_loss', loss, step = update*n_steps)
-            experiment.log_metric('policy_loss', pg_loss, step = update*n_steps)
-            experiment.log_metric('value_loss', value_loss, step = update*n_steps)
-            experiment.log_metric('entropy_loss', entropy, step = update*n_steps)
-            experiment.log_metric('approx_kl', approx_kl, step = update*n_steps)
-            experiment.log_metric('episode_reward', sum(infos)/len(infos), step = update*n_steps)
-
-
-
-
+            # Comet
+            if(comet_experiment is not None):
+                experiment.log_metric('total_loss', loss, step = update*n_steps)
+                experiment.log_metric('policy_loss', pg_loss, step = update*n_steps)
+                experiment.log_metric('value_loss', value_loss, step = update*n_steps)
+                experiment.log_metric('entropy_loss', entropy, step = update*n_steps)
+                experiment.log_metric('approx_kl', approx_kl, step = update*n_steps)
+                experiment.log_metric('episode_reward', sum(episode_rewards)/len(episode_rewards), step = update*n_steps)
 
     def loss(self, clip_range,
                     entropy_coef,
@@ -357,6 +407,27 @@ class PPO2():
                     advantages,
                     old_values,
                     old_neg_log_probs):
+        """Calculates the loss for a batch of data
+
+        Args:
+            clip_range: Clip range for the value function and ratio in policy loss.
+            entropy_coef: Coefficient for entropy loss in total loss function.
+            value_coef: Coefficient for value loss in total loss function.
+            returns: Estimated returns at each time step (n_steps, self.input_dim)
+            values: Value estimate of current policy (n_steps, self.output_dim)
+            neg_log_probs: Negative log probabilities of action for current policy (n_steps, self.output_dim)
+            entropies: Entropy of output distribution for current policy (n_steps, self.output_dim)
+            advantages: Advantage estimates for current policy (n_steps, self.output_dim)
+            old_values: Value estimate of policy used to generate action at each time step (n_steps, self.output_dim)
+            old_neg_log_probs: Negative log probabilities of actions for policy used to generate actions at each time step (n_steps, self.output_dim)
+
+        Returns:
+            loss: Total loss
+            pg_loss: Policy loss
+            value_loss: Value loss
+            entropy_mean: Entropy loss
+            approx_kl: Approximate KL Divergence between old and new policy
+        """
 
         ## Entropy loss ##
         entropy_loss = entropies.mean()
@@ -368,37 +439,21 @@ class PPO2():
         value_loss1 = (values - returns)**2
         value_loss2 = (values_clipped - returns)**2
 
-        # value_loss = F.smooth_l1_loss(value_f, reward)
         value_loss = .5 * torch.mean(torch.max(value_loss1, value_loss2))
 
         ## Policy loss ##
         ratios = torch.exp(old_neg_log_probs - neg_log_probs)
 
-        # print("advantages {}".format(advantages))
-        # print("mean {}".format(advantages.mean()))
-        # print("std {}".format(advantages.std()))
-        # print("ratios {}".format(ratios))
         pg_losses1 = -advantages * ratios
         pg_losses2 = -advantages * torch.clamp(ratios, 1.0 - clip_range, 1.0 + clip_range)
-        # print("loss 1 m{}".format(pg_losses1.mean()))
-        # print("loss 1 s{}".format(pg_losses1.std()))
-        # print("loss_2 m{}".format(pg_losses2.mean()))
-        # print("loss_2 s{}".format(pg_losses2.std()))
-        # print("ratio m{}".format(ratios.mean()))
-        # print("ratio s{}".format(ratios.std()))
-        # print("neg_log_probs {}".format(old_neg_log_probs - neg_log_probs))
-        # print("loss_m {}".format(torch.max(pg_losses1, pg_losses2)))
 
 
         pg_loss = torch.mean(torch.max(pg_losses1, pg_losses2))
 
-        # print("loss {}".format(pg_loss))
         approx_kl = 0.5 * torch.mean((neg_log_probs - old_neg_log_probs)**2)
-        # clip_frac = (torch.abs(ratio - 1.0) > clip_range).float().mean()
 
+
+        ## Total Loss ##
         loss = pg_loss - (entropy_loss * entropy_coef) + (value_loss * value_coef)
 
-        # make_dot(loss, params = dict(self.policy_net.named_parameters())).render()
-
         return loss, pg_loss, value_loss, entropy_loss, approx_kl
-
