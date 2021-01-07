@@ -55,12 +55,12 @@ def main(args):
     if(args.comet_config is not None):
         with open(args.comet_config, 'r') as f:
             comet_dict = json.load(f)
-            experiment = Experiment(
+            comet_experiment = Experiment(
                 api_key = comet_dict["api_key"],
                 project_name = comet_dict["project_name"],
                 workspace = comet_dict["workspace"],
             )
-            experiment.set_name(args.exp_name)
+            comet_experiment.set_name(args.exp_name)
 
             # Get hash for latest git commit for logging
             last_commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode("utf-8").rstrip()
