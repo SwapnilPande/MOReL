@@ -25,14 +25,14 @@ class ActorCriticPolicy(nn.Module):
         self.distribution = distribution
 
         # Policy Network
-        self.h0 = nn.Linear(n_neurons, n_neurons)
+        self.h0 = nn.Linear(input_dim, n_neurons)
         self.h0_act = activation()
         self.h1 = nn.Linear(n_neurons, n_neurons)
         self.h1_act = activation()
         self.output_layer = nn.Linear(n_neurons, output_dim)
 
         # Value Network
-        self.h0v = nn.Linear(n_neurons, n_neurons)
+        self.h0v = nn.Linear(input_dim, n_neurons)
         self.h0_actv = activation()
         self.h1v = nn.Linear(n_neurons, n_neurons)
         self.h1_actv = activation()
@@ -183,7 +183,7 @@ class PPO2():
             mb_done = np.asarray(mb_done, dtype=np.bool)
 
             # get value function for last state
-            _, _, _, last_value = self.forward(obs)
+            _, _, _, last_value = self.forward(torch.tensor(obs).float().to(self.device))
             last_value = last_value.cpu().numpy()
 
             # Compute generalized advantage estimate by bootstrapping
@@ -274,20 +274,20 @@ class PPO2():
             return loss, pg_loss, value_loss, entropy_mean, approx_kl
 
 
-    def train(self, env, experiment, optimizer = torch.optim.Adam,
-                                    lr =  0.00025,
-                                    n_steps = 1024,
-                                    time_steps = 1e6,
-                                    clip_range = 0.2,
-                                    entropy_coef = 0.01,
-                                    value_coef = 0.5,
-                                    num_batches = 4,
-                                    gamma = 0.99,
-                                    lam = 0.95,
-                                    max_grad_norm = 0.5,
-                                    num_train_epochs = 4,
-                                    comet_experiment = None,
-                                    summary_writer = None):
+    def train(self, env, optimizer = torch.optim.Adam,
+                        lr =  0.00025,
+                        n_steps = 1024,
+                        time_steps = 1e6,
+                        clip_range = 0.2,
+                        entropy_coef = 0.01,
+                        value_coef = 0.5,
+                        num_batches = 4,
+                        gamma = 0.99,
+                        lam = 0.95,
+                        max_grad_norm = 0.5,
+                        num_train_epochs = 4,
+                        comet_experiment = None,
+                        summary_writer = None):
         """Entry point for training the policy.
 
         The training routine is based off the the PPO2 implementation provided in the stable-baselines repo.
@@ -322,7 +322,7 @@ class PPO2():
                 "n_steps (simulation)": n_steps,
                 "clip_range" : clip_range,
                 "max_grad_norm" : max_grad_norm,
-                "batch_size" : batch_size,
+                "num_batches" : num_batches,
                 "gamma" : gamma,
                 "lam" : lam,
                 "num_train_epochs" : num_train_epochs,
@@ -390,12 +390,13 @@ class PPO2():
 
             # Comet
             if(comet_experiment is not None):
-                experiment.log_metric('total_loss', loss, step = update*n_steps)
-                experiment.log_metric('policy_loss', pg_loss, step = update*n_steps)
-                experiment.log_metric('value_loss', value_loss, step = update*n_steps)
-                experiment.log_metric('entropy_loss', entropy, step = update*n_steps)
-                experiment.log_metric('approx_kl', approx_kl, step = update*n_steps)
-                experiment.log_metric('episode_reward', sum(episode_rewards)/len(episode_rewards), step = update*n_steps)
+                comet_experiment.log_metric('total_loss', loss, step = update*n_steps)
+                comet_experiment.log_metric('policy_loss', pg_loss, step = update*n_steps)
+                comet_experiment.log_metric('value_loss', value_loss, step = update*n_steps)
+                comet_experiment.log_metric('entropy_loss', entropy, step = update*n_steps)
+                comet_experiment.log_metric('approx_kl', approx_kl, step = update*n_steps)
+                comet_experiment.log_metric('episode_reward', sum(episode_rewards)/len(episode_rewards), step = update*n_steps)
+
 
     def loss(self, clip_range,
                     entropy_coef,
