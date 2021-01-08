@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import os
 import glob
+import tarfile
 from comet_ml import Experiment
 
 # dataset imports
@@ -83,6 +84,14 @@ class Maze2DDataset(Dataset):
     def __len__(self):
         return len(self.source_observation)
 
+def upload_assets(comet_experiment, log_dir):
+    tar_path = log_dir + ".tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(log_dir, arcname=os.path.basename(log_dir))
+
+    comet_experiment.log_asset(tar_path)
+    os.remove(tar_path)
+
 def main(args):
     tensorboard_writer = None
     comet_experiment = None
@@ -128,12 +137,14 @@ def main(args):
 
     agent = Morel(4, 2, tensorboard_writer = tensorboard_writer, comet_experiment = comet_experiment)
 
-    agent.train(dataloader, dynamics_data)
+    # agent.train(dataloader, dynamics_data)
 
     if(not args.no_log):
         agent.save(os.path.join(run_log_dir, "models"))
+        if comet_experiment is not None:
+            upload_assets(comet_experiment, run_log_dir)
 
-    agent.eval(dynamics_data.env)
+    # agent.eval(dynamics_data.env)
 
 
 if __name__ == '__main__':

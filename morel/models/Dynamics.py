@@ -6,6 +6,7 @@ from tqdm import tqdm
 import numpy as np
 import scipy.spatial
 import os
+import tarfile
 
 class DynamicsNet(nn.Module):
     def __init__(self, input_dim, output_dim, n_neurons = 512, activation = nn.ReLU):
