@@ -85,6 +85,13 @@ class DynamicsEnsemble():
 
     def train(self, dataloader, epochs = 5, optimizer = torch.optim.Adam, loss = nn.MSELoss, summary_writer = None, comet_experiment = None):
 
+        hyper_params = {
+            "dynamics_n_models":  self.n_models,
+            "usad_threshold": self.threshold,
+            "dynamics_epochs" : 5
+        }
+        comet_experiment.log_parameters(hyper_params)
+
         # Define optimizers and loss functions
         self.optimizers = [None] * self.n_models
         self.losses = [None] * self.n_models
