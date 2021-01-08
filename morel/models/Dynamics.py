@@ -10,7 +10,6 @@ class DynamicsNet(nn.Module):
     def __init__(self, input_dim, output_dim, n_neurons = 512, activation = nn.ReLU):
         super(DynamicsNet, self).__init__()
 
-
         # Validate inputs
         assert input_dim > 0
         assert output_dim > 0
@@ -41,8 +40,13 @@ class DynamicsNet(nn.Module):
         return x
 
 class DynamicsEnsemble():
-    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, n_layers = 2, activation = nn.ReLU, cuda = True):
+    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, threshold = 0.8, n_layers = 2, activation = nn.ReLU, cuda = True):
         self.n_models = 4
+
+        self.threshold = threshold
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.models = []
 
@@ -79,7 +83,8 @@ class DynamicsEnsemble():
         return output
 
 
-    def train(self, dataloader, epochs = 5, optimizer = torch.optim.Adam, loss = nn.MSELoss, summary_writer = None):
+    def train(self, dataloader, epochs = 5, optimizer = torch.optim.Adam, loss = nn.MSELoss, summary_writer = None, comet_experiment = None):
+
         # Define optimizers and loss functions
         self.optimizers = [None] * self.n_models
         self.losses = [None] * self.n_models
@@ -101,15 +106,21 @@ class DynamicsEnsemble():
                     for j, loss_val in enumerate(loss_vals):
                         summary_writer.add_scalar('Loss/dynamics_{}'.format(j), loss_val, epoch*len(dataloader) + i)
 
+                if(comet_experiment is not None):
+                    for j, loss_val in enumerate(loss_vals):
+                        comet_experiment.log_metric('dyn_model_{}_loss'.format(j), loss_val, epoch*len(dataloader) + i)
+                        comet_experiment.log_metric('dyn_model_avg_loss'.format(j), sum(loss_vals)/len(loss_vals), epoch*len(dataloader) + i)
 
-    def usad(self, x):
-        # Generate prediction of next state using dynamics model
-        predictions = np.array(list(map(lambda i: self.forward(i, x).cpu().detach().numpy(), range(self.n_models))))
 
+    def usad(self, predictions):
         # Compute the pairwise distances between all predictions
         distances = scipy.spatial.distance_matrix(predictions, predictions)
 
         # If maximum is greater than threshold, return true
-        return np.amax(distances) > self.threshold
+        return (np.amax(distances) > self.threshold)
 
+    def predict(self, x):
+        # Generate prediction of next state using dynamics model
+        with torch.set_grad_enabled(False):
+            return np.array(list(map(lambda i: self.forward(i, x).cpu().numpy(), range(self.n_models))))
 

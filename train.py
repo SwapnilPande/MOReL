@@ -26,23 +26,54 @@ class Maze2DDataset(Dataset):
     def __init__(self):
         self.env = gym.make('maze2d-umaze-v1')
         dataset = self.env.get_dataset()
+        print(dataset)
 
-        # # Input data
-        # self.source_observation = dataset["observations"][:-1]
-        # self.source_action = dataset["actions"][:-1]
+        # Input data
+        self.source_observation = dataset["observations"][:-1]
+        self.source_action = dataset["actions"][:-1]
 
-        # # Output data
-        # self.target_observation = dataset["observations"][1:]
+
+        # Output data
+        self.target_delta = dataset["observations"][1:] - self.source_observation
+        self.target_reward = dataset["rewards"][1:]
+
+        # Normalize data
+        self.delta_mean = self.target_delta.mean(axis=0)
+        self.delta_std = self.target_delta.std(axis=0)
+
+        self.reward_mean = self.target_reward.mean(axis=0)
+        self.reward_std = self.target_reward.std(axis=0)
+
+        self.observation_mean = self.source_observation.mean(axis=0)
+        self.observation_std = self.source_observation.std(axis=0)
+
+        self.action_mean = self.source_action.mean(axis=0)
+        self.action_std = self.source_action.std(axis=0)
+
+        self.source_action = (self.source_action - self.action_mean)/self.action_std
+        self.source_observation = (self.source_observation - self.observation_mean)/self.observation_std
+        self.target_delta = (self.target_delta - self.delta_mean)/self.delta_std
+        self.target_reward = (self.target_reward - self.reward_mean)/self.reward_std
+
+        # Get indices of initial states
+        self.done_indices = dataset["timeouts"][:-1]
+        self.initial_indices = np.roll(self.done_indices, 1)
+        self.initial_indices[0] = True
+
+        self.initial_obs = self.source_observation[self.initial_indices]
+        self.initial_obs_mean = self.initial_obs.mean(axis = 0)
+        self.initial_obs_std = self.initial_obs.std(axis = 0)
+
+
 
     def __getitem__(self, idx):
-        # feed = torch.FloatTensor(np.concatenate([self.source_observation[idx], self.source_action[idx]])).to("cuda:0")
-        # target = torch.FloatTensor(self.target_observation[idx]).to("cuda:0" )
-        # return feed, target
-        return None, None
+        feed = torch.FloatTensor(np.concatenate([self.source_observation[idx], self.source_action[idx]])).to("cuda:0")
+        target = torch.FloatTensor(np.concatenate([self.target_delta[idx], self.target_reward[idx:idx+1]])).to("cuda:0" )
+
+        return feed, target
 
     def __len__(self):
-        # return len(self.source_observation)
-        return 5
+        return len(self.source_observation)
 
 def main(args):
     # Create tensorboard writer if requested
@@ -73,7 +104,7 @@ def main(args):
 
     agent = Morel(4, 2, tensorboard_writer = tensorboard_writer, comet_experiment = comet_experiment)
 
-    agent.train(dataloader, dynamics_data.env)
+    agent.train(dataloader, dynamics_data)
 
 
 if __name__ == '__main__':
