@@ -40,7 +40,7 @@ class DynamicsNet(nn.Module):
         return x
 
 class DynamicsEnsemble():
-    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, threshold = 0.8, n_layers = 2, activation = nn.ReLU, cuda = True):
+    def __init__(self, input_dim, output_dim, n_models = 4, n_neurons = 512, threshold = 1.5, n_layers = 2, activation = nn.ReLU, cuda = True):
         self.n_models = 4
 
         self.threshold = threshold

@@ -150,7 +150,7 @@ class PPO2():
         with torch.set_grad_enabled(False):
             for i in range(n_steps):
                 if(done):
-                    info["HALT"] += env_info["HALT"]
+                    info["HALT"] += env_info.get("HALT", 0)
                     obs = env.reset()
                     obs = np.expand_dims(obs, 0)
                     info["episode_rewards"].append(total_reward)
@@ -211,7 +211,7 @@ class PPO2():
             # compute value functions
             mb_returns = mb_advs + mb_values
 
-        return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, cum_rewards
+        return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, info
 
     def train_step(self, clip_range,
                         entropy_coef,
