@@ -21,7 +21,7 @@ class Morel():
         self.tensorboard_writer = tensorboard_writer
         self.comet_experiment = comet_experiment
 
-        self.dynamics = DynamicsEnsemble(obs_dim + action_dim, obs_dim+1)
+        self.dynamics = DynamicsEnsemble(obs_dim + action_dim, obs_dim+1, threshold = 1.2)
         self.policy = PPO2(obs_dim, action_dim)
 
     def train(self, dataloader, dynamics_data, log_to_tensorboard = False):

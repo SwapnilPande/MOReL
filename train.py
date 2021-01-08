@@ -61,9 +61,16 @@ class Maze2DDataset(Dataset):
         self.initial_indices = np.roll(self.done_indices, 1)
         self.initial_indices[0] = True
 
+        # Calculate distribution parameters for initial states
         self.initial_obs = self.source_observation[self.initial_indices]
         self.initial_obs_mean = self.initial_obs.mean(axis = 0)
         self.initial_obs_std = self.initial_obs.std(axis = 0)
+
+        # Remove transitions from terminal to initial states
+        self.source_action = np.delete(self.source_action, self.done_indices, axis = 0)
+        self.source_observation = np.delete(self.source_observation, self.done_indices, axis = 0)
+        self.target_delta = np.delete(self.target_delta, self.done_indices, axis = 0)
+        self.target_reward = np.delete(self.target_reward, self.done_indices, axis = 0)
 
 
 
@@ -77,26 +84,29 @@ class Maze2DDataset(Dataset):
         return len(self.source_observation)
 
 def main(args):
-    # Create necessary directories
-    if(not os.path.isdir(args.log_dir)):
-        os.mkdir(args.log_dir)
-
-    # Create log_dir for run
-    run_log_dir = os.path.join(args.log_dir,args.exp_name)
-    if(os.path.isdir(run_log_dir)):
-        cur_count = len(glob.glob(run_log_dir + "_*"))
-        run_log_dir = run_log_dir + "_" + str(cur_count)
-    os.mkdir(run_log_dir)
-
-    # Create tensorboard writer if requested
     tensorboard_writer = None
-    if(args.tensorboard):
-        tensorboard_dir = os.path.join(run_log_dir, "tensorboard")
-        writer = SummaryWriter(log_dir = tensorboard_dir)
+    comet_experiment = None
+
+    if(not args.no_log):
+        # Create necessary directories
+        if(not os.path.isdir(args.log_dir)):
+            os.mkdir(args.log_dir)
+
+        # Create log_dir for run
+        run_log_dir = os.path.join(args.log_dir,args.exp_name)
+        if(os.path.isdir(run_log_dir)):
+            cur_count = len(glob.glob(run_log_dir + "_*"))
+            run_log_dir = run_log_dir + "_" + str(cur_count)
+        os.mkdir(run_log_dir)
+
+        # Create tensorboard writer if requested
+
+        if(args.tensorboard):
+            tensorboard_dir = os.path.join(run_log_dir, "tensorboard")
+            writer = SummaryWriter(log_dir = tensorboard_dir)
 
 
     # Create comet experiment if requested
-    comet_experiment = None
     if(args.comet_config is not None):
         with open(args.comet_config, 'r') as f:
             comet_dict = json.load(f)
@@ -120,7 +130,8 @@ def main(args):
 
     agent.train(dataloader, dynamics_data)
 
-    agent.save(os.path.join(run_log_dir, "models"))
+    if(not args.no_log):
+        agent.save(os.path.join(run_log_dir, "models"))
 
     agent.eval(dynamics_data.env)
 
@@ -132,6 +143,8 @@ if __name__ == '__main__':
     parser.add_argument('--tensorboard', action='store_true')
     parser.add_argument('--comet_config', type=str, default=None)
     parser.add_argument('--exp_name', type=str, default='exp_test')
+    parser.add_argument('--no_log', action='store_true')
+
 
     args = parser.parse_args()
     main(args)
