@@ -139,7 +139,7 @@ class PPO2():
 
         # Initialize memory buffer
         mb_obs, mb_rewards, mb_actions, mb_values, mb_done, mb_neg_log_prob = [],[],[],[],[],[]
-        ep_infos = []
+        cum_rewards = []
         total_reward = 0
 
         # For n in range number of steps
@@ -148,7 +148,7 @@ class PPO2():
                 if(done):
                     obs = env.reset()
                     obs = np.expand_dims(obs, 0)
-                    ep_infos.append(total_reward)
+                    cum_rewards.append(total_reward)
 
                 # Choose action
                 action, neg_log_prob, _, value = self.forward(observation = torch.tensor(obs).float().to(self.device))
@@ -206,7 +206,7 @@ class PPO2():
             # compute value functions
             mb_returns = mb_advs + mb_values
 
-        return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, ep_infos
+        return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, cum_rewards
 
     def train_step(self, clip_range,
                         entropy_coef,

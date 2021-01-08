@@ -3,6 +3,7 @@ from morel.models.Dynamics import DynamicsEnsemble
 from morel.models.Policy import PPO2
 
 import numpy as np
+from tqdm import tqdm
 
 # torch imports
 import torch
@@ -73,9 +74,9 @@ class FakeEnv:
         if(uncertain):
             reward_out = -50.0
 
-        self.steps += 1
+        self.steps_elapsed += 1
 
-        return self.state, reward_out, (uncertain or self.steps > self.timeout_steps), None
+        return self.state, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), None
 
 class Morel():
     def __init__(self, obs_dim, action_dim, tensorboard_writer = None, comet_experiment = None):
@@ -106,6 +107,23 @@ class Morel():
 
         print("---------------- Beginning Policy Training ----------------")
         self.policy.train(env, summary_writer = self.tensorboard_writer, comet_experiment = self.comet_experiment)
+        print("---------------- Ending Policy Training ----------------")
+
+        print("---------------- Beginning Policy Evaluation ----------------")
+        total_rewards = []
+        for i in tqdm(range(20)):
+            _, _, _, _, _, _, _, episode_rewards = self.policy.generate_experience(self.dynamics_data.env, 1024, 0.95, 0.99)
+            total_rewards.extend(episode_rewards)
+
+            if(self.tensorboard_writer is not None):
+                self.tensorboard_writer.add_scalar('Metrics/eval_episode_reward', sum(episode_rewards)/len(episode_rewards), step = i)
+
+            if(self.comet_experiment is not None):
+                self.comet_experiment.log_metric('eval_episode_reward', sum(episode_rewards)/len(episode_rewards), step = i)
+
+        print("Final evaluation reward: {}".format(sum(total_rewards)/len(total_rewards)))
+
+        print("---------------- Ending Policy Evaluation ----------------")
 
 
 

@@ -106,7 +106,7 @@ class DynamicsEnsemble():
                     for j, loss_val in enumerate(loss_vals):
                         summary_writer.add_scalar('Loss/dynamics_{}'.format(j), loss_val, epoch*len(dataloader) + i)
 
-                if(comet_experiment is not None):
+                if(comet_experiment is not None and i % 10 == 0):
                     for j, loss_val in enumerate(loss_vals):
                         comet_experiment.log_metric('dyn_model_{}_loss'.format(j), loss_val, epoch*len(dataloader) + i)
                         comet_experiment.log_metric('dyn_model_avg_loss'.format(j), sum(loss_vals)/len(loss_vals), epoch*len(dataloader) + i)
