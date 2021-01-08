@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from morel.fake_env import FakeEnv
 # from torchviz import make_dot
 
 import numpy as np
@@ -133,9 +134,8 @@ class PPO2():
             episode_reward: List of total episode rewards for every completed episode
         """
 
-        # Create observation vector
-        obs = np.expand_dims(env.reset(), 0)
-        done = False
+        # Reset environment on first step
+        done = True
 
         # Initialize memory buffer
         mb_obs, mb_rewards, mb_actions, mb_values, mb_done, mb_neg_log_prob = [],[],[],[],[],[]
@@ -151,49 +151,90 @@ class PPO2():
             for i in range(n_steps):
                 if(done):
                     info["HALT"] += env_info.get("HALT", 0)
+
                     obs = env.reset()
-                    obs = np.expand_dims(obs, 0)
+                    done = False
+
+                    # Convert obs to torch tensor
+                    if(not isinstance(env, FakeEnv)):
+                        obs = torch.tensor(obs).float().to(self.device)
+                    obs = torch.unsqueeze(obs, 0)
+
                     info["episode_rewards"].append(total_reward)
 
                 # Choose action
-                action, neg_log_prob, _, value = self.forward(observation = torch.tensor(obs).float().to(self.device))
+                action, neg_log_prob, _, value = self.forward(observation = obs)
+
+                # # Retrieve values
+                # action = np.squeeze(action.cpu().numpy())
+                # neg_log_prob = np.squeeze(neg_log_prob.cpu().numpy())
+                # value = np.squeeze(value.cpu().numpy())
+
+                # # Append data from step to memory buffer
+                # mb_obs.append(obs.copy())
+                # mb_actions.append(action)
+                # mb_values.append(value)
+                # mb_neg_log_prob.append(neg_log_prob)
+                # mb_done.append(done)
 
                 # Retrieve values
-                action = np.squeeze(action.cpu().numpy())
-                neg_log_prob = np.squeeze(neg_log_prob.cpu().numpy())
-                value = np.squeeze(value.cpu().numpy())
+                action = torch.squeeze(action)
+                neg_log_prob = torch.squeeze(neg_log_prob)
+                value = torch.squeeze(value)
 
                 # Append data from step to memory buffer
-                mb_obs.append(obs.copy())
+                # mb_obs.append(obs.copy())
+                mb_obs.append(obs)
                 mb_actions.append(action)
                 mb_values.append(value)
                 mb_neg_log_prob.append(neg_log_prob)
                 mb_done.append(done)
 
                 # Step the environment, get new observation and reward
-                obs, rewards, done, env_info = env.step(action)
-                obs = np.expand_dims(obs, 0)
-                total_reward += rewards
+                # If we are interacting with a FakeEnv, we can safely keep the action as a torch tensor
+                # Else, we must convert to a numpy array
+                # If obs comes as numpy array, convert to torch tensor as well
+                if(isinstance(env, FakeEnv)):
+                    obs, rewards, done, env_info = env.step(action)
+
+                    total_reward += rewards.cpu().item()
+                else:
+                    obs, rewards, done, env_info = env.step(action.cpu().numpy())
+                    obs = torch.tensor(obs).float().to(self.device)
+
+                    total_reward += rewards
+
+                    rewards = torch.tensor(rewards).float().to(self.device)
 
                 # Append reward to memory buffer as well
                 mb_rewards.append(rewards)
 
+                obs = torch.unsqueeze(obs, 0)
+
+            # # Convert memory buffer lists to numpy arrays
+            # mb_obs = np.concatenate(mb_obs, 0).astype(np.float32)
+            # mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
+            # mb_actions = np.asarray(mb_actions)
+            # mb_values = np.asarray(mb_values, dtype=np.float32)
+            # mb_neg_log_prob = np.asarray(mb_neg_log_prob, dtype=np.float32)
+            # mb_done = np.asarray(mb_done, dtype=np.bool)
 
             # Convert memory buffer lists to numpy arrays
-            mb_obs = np.concatenate(mb_obs, 0).astype(np.float32)
-            mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-            mb_actions = np.asarray(mb_actions)
-            mb_values = np.asarray(mb_values, dtype=np.float32)
-            mb_neg_log_prob = np.asarray(mb_neg_log_prob, dtype=np.float32)
+            # print(mb_obs[0:5])
+            mb_obs = torch.cat(mb_obs, 0)
+            mb_rewards = torch.stack(mb_rewards)
+            mb_actions = torch.stack(mb_actions)
+            mb_values = torch.stack(mb_values)
+            mb_neg_log_prob = torch.stack(mb_neg_log_prob)
             mb_done = np.asarray(mb_done, dtype=np.bool)
 
             # get value function for last state
-            _, _, _, last_value = self.forward(torch.tensor(obs).float().to(self.device))
-            last_value = last_value.cpu().numpy()
+            _, _, _, last_value = self.forward(obs)
+            # last_value = last_value.cpu().numpy()
 
             # Compute generalized advantage estimate by bootstrapping
-            mb_advs = np.zeros_like(mb_rewards)
-            last_gae_lam = 0
+            mb_advs = torch.zeros_like(mb_rewards).float().to(self.device)
+            last_gae_lam = torch.Tensor([0.0]).float().to(self.device)
             for t in reversed(range(n_steps)):
                 # next_non_terminal stores index of the next time step (in reverse order) that is non-terminal
                 if t == n_steps - 1:
@@ -210,6 +251,7 @@ class PPO2():
 
             # compute value functions
             mb_returns = mb_advs + mb_values
+
 
         return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, info
 
@@ -244,10 +286,10 @@ class PPO2():
         """
 
         # Create torch tensors and send to correct device
-        returns = torch.tensor(returns).float().to(self.device)
-        old_actions = torch.tensor(old_actions).to(self.device)
-        old_values = torch.tensor(old_values).to(self.device)
-        old_neg_log_probs = torch.tensor(old_neg_log_probs).to(self.device)
+        # returns = torch.tensor(returns).float().to(self.device)
+        # old_actions = torch.tensor(old_actions).to(self.device)
+        # old_values = torch.tensor(old_values).to(self.device)
+        # old_neg_log_probs = torch.tensor(old_neg_log_probs).to(self.device)
 
         # Calculate and normalize the advantages
         with torch.set_grad_enabled(False):
@@ -260,7 +302,7 @@ class PPO2():
         self.policy.train()
         with torch.set_grad_enabled(True):
             # Feed batch through policy network
-            actions, neg_log_probs, entropies, values = self.forward(torch.tensor(obs).float().to(self.device), action = old_actions)
+            actions, neg_log_probs, entropies, values = self.forward(obs, action = old_actions)
 
             loss, pg_loss, value_loss, entropy_mean, approx_kl = self.loss(clip_range,
                                                                             entropy_coef,
@@ -282,7 +324,7 @@ class PPO2():
     def train(self, env, optimizer = torch.optim.Adam,
                         lr =  0.00027,
                         n_steps = 1024,
-                        time_steps = 2e6,
+                        time_steps = 1e6,
                         clip_range = 0.2,
                         entropy_coef = 0.01,
                         value_coef = 0.5,
@@ -382,6 +424,8 @@ class PPO2():
 
                     # Run optimizer step
                     self.policy_optim.step()
+
+            print("done with train step")
 
             # Tensorboard
             if(summary_writer is not None):

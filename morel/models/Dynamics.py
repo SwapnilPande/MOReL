@@ -129,5 +129,5 @@ class DynamicsEnsemble():
     def predict(self, x):
         # Generate prediction of next state using dynamics model
         with torch.set_grad_enabled(False):
-            return np.array(list(map(lambda i: self.forward(i, x).cpu().numpy(), range(self.n_models))))
+            return torch.stack(list(map(lambda i: self.forward(i, x), range(self.n_models))))
 

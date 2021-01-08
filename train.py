@@ -26,7 +26,6 @@ class Maze2DDataset(Dataset):
     def __init__(self):
         self.env = gym.make('maze2d-umaze-v1')
         dataset = self.env.get_dataset()
-        print(dataset)
 
         # Input data
         self.source_observation = dataset["observations"][:-1]
