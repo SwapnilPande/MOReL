@@ -1,10 +1,12 @@
 # morel imports
+from numpy.lib.npyio import save
 from morel.models.Dynamics import DynamicsEnsemble
 from morel.models.Policy import PPO2
 from morel.fake_env import FakeEnv
 
 import numpy as np
 from tqdm import tqdm
+import os
 
 # torch imports
 import torch
@@ -45,10 +47,13 @@ class Morel():
         self.policy.train(env, summary_writer = self.tensorboard_writer, comet_experiment = self.comet_experiment)
         print("---------------- Ending Policy Training ----------------")
 
+        print("---------------- Successfully Completed Training ----------------")
+
+    def eval(self, env):
         print("---------------- Beginning Policy Evaluation ----------------")
         total_rewards = []
         for i in tqdm(range(50)):
-            _, _, _, _, _, _, _, info = self.policy.generate_experience(self.dynamics_data.env, 1024, 0.95, 0.99)
+            _, _, _, _, _, _, _, info = self.policy.generate_experience(env, 1024, 0.95, 0.99)
             total_rewards.extend(info["episode_rewards"])
 
             if(self.tensorboard_writer is not None):
@@ -61,6 +66,17 @@ class Morel():
         print("Final evaluation reward: {}".format(sum(total_rewards)/len(total_rewards)))
 
         print("---------------- Ending Policy Evaluation ----------------")
+
+    def save(self, save_dir):
+        if(not os.path.isdir(save_dir)):
+            os.mkdir(save_dir)
+
+        self.policy.save(save_dir)
+        self.dynamics.save(save_dir)
+
+    def load(self, load_dir):
+        self.policy.load(load_dir)
+        self.dynamics.load(load_dir)
 
 
 

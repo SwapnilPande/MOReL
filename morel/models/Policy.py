@@ -5,6 +5,8 @@ from morel.fake_env import FakeEnv
 # from torchviz import make_dot
 
 import numpy as np
+from tqdm import tqdm
+import os
 
 class ActorCriticPolicy(nn.Module):
     def __init__(self, input_dim,
@@ -385,7 +387,7 @@ class PPO2():
         self.policy_optim = optimizer(self.policy.parameters(), lr = lr)
 
         # main train loop
-        for update in range(n_updates):
+        for update in tqdm(range(n_updates)):
             # Collect new experiences using the current policy
             rewards, obs, returns, dones, actions, values, neg_log_probs, info = self.generate_experience(env, n_steps, gamma, lam)
             indices = np.arange(n_steps)
@@ -509,3 +511,9 @@ class PPO2():
         loss = pg_loss - (entropy_loss * entropy_coef) + (value_loss * value_coef)
 
         return loss, pg_loss, value_loss, entropy_loss, approx_kl
+
+    def save(self, save_dir):
+        torch.save(self.policy.state_dict(), os.path.join(save_dir, "policy.pt"))
+
+    def load(self, load_dir):
+        self.policy.load_state_dict(torch.load(os.path.join(load_dir, "policy.pt")))

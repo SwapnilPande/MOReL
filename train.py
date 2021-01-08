@@ -1,12 +1,14 @@
 
+#general
+
 import argparse
 import json
 import subprocess
-from comet_ml import Experiment
-
-#general
 import numpy as np
 from tqdm import tqdm
+import os
+import glob
+from comet_ml import Experiment
 
 # dataset imports
 import gym
@@ -75,10 +77,23 @@ class Maze2DDataset(Dataset):
         return len(self.source_observation)
 
 def main(args):
+    # Create necessary directories
+    if(not os.path.isdir(args.log_dir)):
+        os.mkdir(args.log_dir)
+
+    # Create log_dir for run
+    run_log_dir = os.path.join(args.log_dir,args.exp_name)
+    if(os.path.isdir(run_log_dir)):
+        cur_count = len(glob.glob(run_log_dir + "_*"))
+        run_log_dir = run_log_dir + "_" + str(cur_count)
+    os.mkdir(run_log_dir)
+
     # Create tensorboard writer if requested
     tensorboard_writer = None
     if(args.tensorboard):
-        writer = SummaryWriter(log_dir = args.log_dir)
+        tensorboard_dir = os.path.join(run_log_dir, "tensorboard")
+        writer = SummaryWriter(log_dir = tensorboard_dir)
+
 
     # Create comet experiment if requested
     comet_experiment = None
@@ -104,6 +119,10 @@ def main(args):
     agent = Morel(4, 2, tensorboard_writer = tensorboard_writer, comet_experiment = comet_experiment)
 
     agent.train(dataloader, dynamics_data)
+
+    agent.save(os.path.join(run_log_dir, "models"))
+
+    agent.eval(dynamics_data.env)
 
 
 if __name__ == '__main__':

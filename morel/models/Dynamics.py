@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 import scipy.spatial
+import os
 
 class DynamicsNet(nn.Module):
     def __init__(self, input_dim, output_dim, n_neurons = 512, activation = nn.ReLU):
@@ -130,4 +131,12 @@ class DynamicsEnsemble():
         # Generate prediction of next state using dynamics model
         with torch.set_grad_enabled(False):
             return torch.stack(list(map(lambda i: self.forward(i, x), range(self.n_models))))
+
+    def save(self, save_dir):
+        for i in range(self.n_models):
+            torch.save(self.models[i].state_dict(), os.path.join(save_dir, "dynamics_{}.pt".format(i)))
+
+    def load(self, load_dir):
+        for i in range(self.n_models):
+            self.models[i].load_state_dict(torch.load(os.path.join(load_dir, "dynamics_{}.pt".format(i))))
 
