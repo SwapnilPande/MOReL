@@ -76,7 +76,7 @@ class FakeEnv:
 
         self.steps_elapsed += 1
 
-        return self.state, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), None
+        return self.state, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), {"HALT" : uncertain}
 
 class Morel():
     def __init__(self, obs_dim, action_dim, tensorboard_writer = None, comet_experiment = None):
@@ -111,7 +111,7 @@ class Morel():
 
         print("---------------- Beginning Policy Evaluation ----------------")
         total_rewards = []
-        for i in tqdm(range(20)):
+        for i in tqdm(range(50)):
             _, _, _, _, _, _, _, episode_rewards = self.policy.generate_experience(self.dynamics_data.env, 1024, 0.95, 0.99)
             total_rewards.extend(episode_rewards)
 

@@ -139,16 +139,21 @@ class PPO2():
 
         # Initialize memory buffer
         mb_obs, mb_rewards, mb_actions, mb_values, mb_done, mb_neg_log_prob = [],[],[],[],[],[]
-        cum_rewards = []
+        info = {
+            "episode_rewards" : [],
+            "HALT" : 0
+        }
         total_reward = 0
+        env_info = {}
 
         # For n in range number of steps
         with torch.set_grad_enabled(False):
             for i in range(n_steps):
                 if(done):
+                    info["HALT"] += env_info["HALT"]
                     obs = env.reset()
                     obs = np.expand_dims(obs, 0)
-                    cum_rewards.append(total_reward)
+                    info["episode_rewards"].append(total_reward)
 
                 # Choose action
                 action, neg_log_prob, _, value = self.forward(observation = torch.tensor(obs).float().to(self.device))
@@ -166,7 +171,7 @@ class PPO2():
                 mb_done.append(done)
 
                 # Step the environment, get new observation and reward
-                obs, rewards, done, info = env.step(action)
+                obs, rewards, done, env_info = env.step(action)
                 obs = np.expand_dims(obs, 0)
                 total_reward += rewards
 
@@ -275,9 +280,9 @@ class PPO2():
 
 
     def train(self, env, optimizer = torch.optim.Adam,
-                        lr =  0.00025,
+                        lr =  0.00027,
                         n_steps = 1024,
-                        time_steps = 1e6,
+                        time_steps = 2e6,
                         clip_range = 0.2,
                         entropy_coef = 0.01,
                         value_coef = 0.5,
@@ -340,7 +345,7 @@ class PPO2():
         # main train loop
         for update in range(n_updates):
             # Collect new experiences using the current policy
-            rewards, obs, returns, dones, actions, values, neg_log_probs, episode_rewards = self.generate_experience(env, n_steps, gamma, lam)
+            rewards, obs, returns, dones, actions, values, neg_log_probs, info = self.generate_experience(env, n_steps, gamma, lam)
             indices = np.arange(n_steps)
 
             # Loop over train epochs
@@ -386,7 +391,8 @@ class PPO2():
                 summary_writer.add_scalar('Loss/value', value_loss, update*n_steps)
                 summary_writer.add_scalar('Metrics/entropy', entropy, update*n_steps)
                 summary_writer.add_scalar('Metrics/approx_kl', approx_kl, update*n_steps)
-                summary_writer.add_scalar('Metrics/max_reward', sum(episode_rewards)/len(episode_rewards), update*n_steps)
+                summary_writer.add_scalar('Metrics/max_reward', sum(info["episode_rewards"])/len(info["episode_rewards"]), update*n_steps)
+                summary_writer.add_scalar('Metricshalt_per_episode', info["HALT"]/len(info["episode_rewards"]), step = update*n_steps)
 
             # Comet
             if(comet_experiment is not None):
@@ -395,7 +401,8 @@ class PPO2():
                 comet_experiment.log_metric('value_loss', value_loss, step = update*n_steps)
                 comet_experiment.log_metric('entropy_loss', entropy, step = update*n_steps)
                 comet_experiment.log_metric('approx_kl', approx_kl, step = update*n_steps)
-                comet_experiment.log_metric('episode_reward', sum(episode_rewards)/len(episode_rewards), step = update*n_steps)
+                comet_experiment.log_metric('episode_reward', sum(info["episode_rewards"])/len(info["episode_rewards"]), step = update*n_steps)
+                comet_experiment.log_metric('halt_per_episode', info["HALT"]/len(info["episode_rewards"]), step = update*n_steps)
 
 
     def loss(self, clip_range,
