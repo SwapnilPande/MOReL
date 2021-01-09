@@ -21,10 +21,13 @@ class Morel():
         self.tensorboard_writer = tensorboard_writer
         self.comet_experiment = comet_experiment
 
-        self.dynamics = DynamicsEnsemble(obs_dim + action_dim, obs_dim+1, threshold = 1.2)
+        self.dynamics = DynamicsEnsemble(obs_dim + action_dim, obs_dim+1, threshold = 0.6)
         self.policy = PPO2(obs_dim, action_dim)
 
     def train(self, dataloader, dynamics_data, log_to_tensorboard = False):
+        if(self.comet_experiment is not None):
+            self.comet_experiment.log_parameter("uncertain_penalty", -100)
+
         self.dynamics_data = dynamics_data
 
         print("---------------- Beginning Dynamics Training ----------------")
@@ -41,7 +44,8 @@ class Morel():
                             self.dynamics_data.reward_mean,
                             self.dynamics_data.reward_std,
                             self.dynamics_data.initial_obs_mean,
-                            self.dynamics_data.initial_obs_std)
+                            self.dynamics_data.initial_obs_std,
+                            uncertain_penalty=-100.0)
 
         print("---------------- Beginning Policy Training ----------------")
         self.policy.train(env, summary_writer = self.tensorboard_writer, comet_experiment = self.comet_experiment)

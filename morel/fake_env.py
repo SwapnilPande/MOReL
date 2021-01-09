@@ -17,8 +17,11 @@ class FakeEnv:
                         initial_obs_mean,
                         initial_obs_std,
                         timeout_steps = 300,
+                        uncertain_penalty = -100,
                         device = "cuda:0"):
         self.dynamics_model = dynamics_model
+
+        self.uncertain_penalty = uncertain_penalty
 
         self.input_dim = self.dynamics_model.input_dim
         self.output_dim = self.dynamics_model.output_dim
@@ -66,7 +69,7 @@ class FakeEnv:
         reward_out = self.reward_std*torch.mean(rewards) + self.reward_mean
 
         if(uncertain):
-            reward_out[reward_out == 0] = -50.0
+            reward_out[reward_out == 0] = self.uncertain_penalty
         reward_out = torch.squeeze(reward_out)
 
         self.steps_elapsed += 1

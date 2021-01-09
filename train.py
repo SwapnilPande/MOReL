@@ -137,14 +137,14 @@ def main(args):
 
     agent = Morel(4, 2, tensorboard_writer = tensorboard_writer, comet_experiment = comet_experiment)
 
-    # agent.train(dataloader, dynamics_data)
+    agent.train(dataloader, dynamics_data)
 
     if(not args.no_log):
         agent.save(os.path.join(run_log_dir, "models"))
         if comet_experiment is not None:
             upload_assets(comet_experiment, run_log_dir)
 
-    # agent.eval(dynamics_data.env)
+    agent.eval(dynamics_data.env)
 
 
 if __name__ == '__main__':
