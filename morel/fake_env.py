@@ -55,6 +55,7 @@ class FakeEnv:
         action = (action_unnormalized - self.action_mean)/self.action_std
         predictions = self.dynamics_model.predict(torch.cat([self.state, action],0))
 
+
         deltas = predictions[:,0:self.output_dim-1]
 
         rewards = predictions[:,-1]
