@@ -92,7 +92,8 @@ class DynamicsEnsemble():
             "usad_threshold": self.threshold,
             "dynamics_epochs" : 5
         }
-        comet_experiment.log_parameters(hyper_params)
+        if(comet_experiment is not None):
+            comet_experiment.log_parameters(hyper_params)
 
         # Define optimizers and loss functions
         self.optimizers = [None] * self.n_models

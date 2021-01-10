@@ -69,7 +69,7 @@ class FakeEnv:
         reward_out = self.reward_std*torch.mean(rewards) + self.reward_mean
 
         if(uncertain):
-            reward_out[reward_out == 0] = self.uncertain_penalty
+            reward_out[0] = self.uncertain_penalty
         reward_out = torch.squeeze(reward_out)
 
         self.steps_elapsed += 1

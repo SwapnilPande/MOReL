@@ -146,6 +146,7 @@ class PPO2():
             "episode_rewards" : [],
             "HALT" : 0
         }
+        rewards = 0
         total_reward = 0
         env_info = {}
 
@@ -164,6 +165,7 @@ class PPO2():
                     obs = torch.unsqueeze(obs, 0)
 
                     info["episode_rewards"].append(total_reward)
+
 
                 # Choose action
                 action, neg_log_prob, _, value = self.forward(observation = obs)
