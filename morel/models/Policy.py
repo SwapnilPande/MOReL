@@ -74,6 +74,7 @@ class ActorCriticPolicy(nn.Module):
         x = self.h1v(x)
         x = self.h1_actv(x)
         value = self.value_head(x)
+        value = torch.squeeze(value)
 
         return action, neg_log_prob, entropy, value
 
@@ -254,7 +255,6 @@ class PPO2():
             # compute value functions
             mb_returns = mb_advs + mb_values
 
-
         return mb_rewards, mb_obs, mb_returns, mb_done, mb_actions, mb_values, mb_neg_log_prob, info
 
     def train_step(self, clip_range,
@@ -427,8 +427,6 @@ class PPO2():
                     # Run optimizer step
                     self.policy_optim.step()
 
-            print("done with train step")
-
             # Tensorboard
             if(summary_writer is not None):
 
@@ -505,7 +503,6 @@ class PPO2():
         pg_loss = torch.mean(torch.max(pg_losses1, pg_losses2))
 
         approx_kl = 0.5 * torch.mean((neg_log_probs - old_neg_log_probs)**2)
-
 
         ## Total Loss ##
         loss = pg_loss - (entropy_loss * entropy_coef) + (value_loss * value_coef)
