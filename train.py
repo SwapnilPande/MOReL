@@ -37,7 +37,7 @@ class Maze2DDataset(Dataset):
 
         # Output data
         self.target_delta = dataset["observations"][1:] - self.source_observation
-        self.target_reward = dataset["rewards"][1:]
+        self.target_reward = dataset["rewards"][:-1]
 
         # Normalize data
         self.delta_mean = self.target_delta.mean(axis=0)
@@ -77,7 +77,7 @@ class Maze2DDataset(Dataset):
 
     def __getitem__(self, idx):
         feed = torch.FloatTensor(np.concatenate([self.source_observation[idx], self.source_action[idx]])).to("cuda:0")
-        target = torch.FloatTensor(np.concatenate([self.target_delta[idx], self.target_reward[idx:idx+1]])).to("cuda:0" )
+        target = torch.FloatTensor(np.concatenate([self.target_delta[idx], self.target_reward[idx:idx+1]])).to("cuda:0")
 
         return feed, target
 

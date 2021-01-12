@@ -46,13 +46,21 @@ class FakeEnv:
         self.state = None
 
     def reset(self):
-        self.state = torch.normal(self.initial_obs_mean, self.initial_obs_std)
+        next_obs = torch.normal(self.initial_obs_mean, self.initial_obs_std)
+        self.state = (next_obs - self.obs_mean)/self.obs_std
         self.steps_elapsed = 0
 
-        return self.state
+        return next_obs
 
-    def step(self, action_unnormalized):
+    def step(self, action_unnormalized, obs = None):
         action = (action_unnormalized - self.action_mean)/self.action_std
+
+        if obs is not None:
+            self.state = (torch.tensor(obs).float().to(self.device) - self.obs_mean)/self.obs_std
+            # self.state = torch.unsqueeze(self.state,0)
+            print(self.state.shape)
+            print(action.shape)
+
         predictions = self.dynamics_model.predict(torch.cat([self.state, action],0))
 
 
@@ -76,4 +84,4 @@ class FakeEnv:
 
         self.steps_elapsed += 1
 
-        return self.state, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), {"HALT" : uncertain}
+        return next_obs, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), {"HALT" : uncertain}
