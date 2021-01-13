@@ -45,6 +45,7 @@ class Morel():
                             self.dynamics_data.reward_std,
                             self.dynamics_data.initial_obs_mean,
                             self.dynamics_data.initial_obs_std,
+                            self.dynamics_data.source_observation,
                             uncertain_penalty=-50.0)
 
         print("---------------- Beginning Policy Training ----------------")
@@ -53,7 +54,46 @@ class Morel():
 
         print("---------------- Successfully Completed Training ----------------")
 
-    def eval(self, env):
+    def eval(self, env):#dynamics_data, compare_model= False):
+        # self.dynamics_data = dynamics_data
+        # real_env = dynamics_data.env
+        # if(compare_model):
+        #     fake_env = FakeEnv(self.dynamics,
+        #                     self.dynamics_data.observation_mean,
+        #                     self.dynamics_data.observation_std,
+        #                     self.dynamics_data.action_mean,
+        #                     self.dynamics_data.action_std,
+        #                     self.dynamics_data.delta_mean,
+        #                     self.dynamics_data.delta_std,
+        #                     self.dynamics_data.reward_mean,
+        #                     self.dynamics_data.reward_std,
+        #                     self.dynamics_data.initial_obs_mean,
+        #                     self.dynamics_data.initial_obs_std,
+        #                     self.dynamics_data.source_observation,
+        #                     uncertain_penalty=-50.0)
+
+        # for i in range(50):
+        #     real_obs = real_env.reset()
+        #     fake_env.reset()
+        #     done = False
+
+        #     while(not done):
+        #         input_obs = real_obs
+        #         action = self.policy.eval(input_obs)
+        #         if(compare_model):
+        #             fake_obs, fake_reward, _, info  = fake_env.step(action, obs = real_obs)
+
+        #         real_obs, real_reward, done, _ = real_env.step(action.cpu().numpy())
+        #         real_env.render()
+
+        #         if compare_model:
+        #             print("Obs: {} {}".format(real_obs, fake_obs))
+        #             print("Reward: {} {}".format(real_reward, fake_reward))
+        #             print("USAD: {}".format(info["HALT"]))
+        #             input()
+
+
+
         print("---------------- Beginning Policy Evaluation ----------------")
         total_rewards = []
         for i in tqdm(range(50)):

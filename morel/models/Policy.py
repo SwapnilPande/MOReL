@@ -78,8 +78,103 @@ class ActorCriticPolicy(nn.Module):
 
         return action, neg_log_prob, entropy, value
 
+class ConvActorCriticPolicy(nn.Module):
+    def __init__(self, input_dim,
+                output_dim,
+                n_neurons = 64,
+                activation = nn.ReLU,
+                distribution = torch.distributions.multivariate_normal.MultivariateNormal):
+        # Validate inputs
+        assert input_dim > 0
+        assert output_dim > 0
+        assert n_neurons > 0
+
+        super(ConvActorCriticPolicy, self).__init__()
+
+        # Store configuration parameters
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.n_neurons = n_neurons
+        self.distribution = distribution
+
+
+        # Policy Network - cnn feature extractor followed by 2 fc layers
+        self.cnn_p = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=5, stride=3),
+            nn.BatchNorm2d(16),
+            activation(),
+            nn.Conv2d(16, 32, kernel_size=5, stride=3),
+            nn.BatchNorm2d(32),
+            activation(),
+            nn.Conv2d(32, 32, kernel_size=5, stride=3),
+            nn.BatchNorm2d(32),
+            nn.AdaptiveAvgPool2d((1,1))
+        )
+
+        self.fc1 = nn.Linear(32, n_neurons)
+        self.fc1_act = activation()
+        self.output_layer = nn.Linear(n_neurons, output_dim)
+
+        # Value Network
+        self.cnn_v = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=5, stride=3),
+            nn.BatchNorm2d(16),
+            activation(),
+            nn.Conv2d(16, 32, kernel_size=5, stride=3),
+            nn.BatchNorm2d(32),
+            activation(),
+            nn.Conv2d(32, 32, kernel_size=5, stride=3),
+            nn.BatchNorm2d(32),
+            nn.AdaptiveAvgPool2d((1,1))
+        )
+
+        self.fc1_v = nn.Linear(32, n_neurons)
+        self.fc1_act_v = activation()
+        self.value_head = nn.Linear(n_neurons, 1)
+
+        self.var = torch.nn.Parameter(torch.tensor([0.0]*self.output_dim), requires_grad = True)
+
+        # self.mean_activation = nn.Tanh()
+        # self.var_activation = nn.Softplus()
+
+    def forward(self, obs, action = None):
+        # Policy Forward Pass
+
+        obs = obs.permute([0,3,1,2])
+        x = self.cnn_p(obs)
+        x = torch.squeeze(x,3)
+        x = torch.squeeze(x,2)
+
+        x = self.fc1(x)
+        x = self.fc1_act(x)
+        mean = self.output_layer(x)
+
+        # Generate action distribution
+        #TODO Add Support for additional distributions
+        var = torch.exp(self.var)
+        action_dist = self.distribution(mean, torch.diag_embed(var))
+
+        # Sample action if not passed as argument to function
+        # Action is passed when doing policy updates
+        if action is None:
+            action = action_dist.sample()
+
+        neg_log_prob = action_dist.log_prob(action) * -1.
+        entropy = action_dist.entropy()
+
+        # Value Forward Pass
+        x = self.cnn_p(obs)
+        x = torch.squeeze(x,3)
+        x = torch.squeeze(x,2)
+        x = self.fc1_v(x)
+        x = self.fc1_act_v(x)
+        value = self.value_head(x)
+        value = torch.squeeze(value)
+
+        return action, neg_log_prob, entropy, value
+
 class PPO2():
-    def __init__(self, input_dim, output_dim, device = "cuda:0"):
+    def __init__(self, input_dim, output_dim, device = "cuda:0", network = ActorCriticPolicy):
         """Initializes a PPO2 Policy.
 
         Currently only has support for continuous action spaces.
@@ -97,7 +192,7 @@ class PPO2():
         self.output_dim = output_dim
 
         # Instantiate Actor Critic Policy
-        self.policy = ActorCriticPolicy(input_dim, output_dim, n_neurons=64).to(self.device)
+        self.policy = network(input_dim, output_dim, n_neurons=64).to(self.device)
 
     def forward(self, observation, action = None):
         """Performs a forward pass using the policy network
@@ -154,17 +249,20 @@ class PPO2():
         with torch.set_grad_enabled(False):
             for i in range(n_steps):
                 if(done):
+
                     info["HALT"] += env_info.get("HALT", 0)
 
                     obs = env.reset()
                     done = False
 
+
                     # Convert obs to torch tensor
                     if(not isinstance(env, FakeEnv)):
-                        obs = torch.tensor(obs).float().to(self.device)
+                        obs = torch.from_numpy(obs.copy()).float().to(self.device)
                     obs = torch.unsqueeze(obs, 0)
 
                     info["episode_rewards"].append(total_reward)
+                    total_reward = 0
 
 
                 # Choose action
@@ -205,7 +303,11 @@ class PPO2():
                     total_reward += rewards.cpu().item()
                 else:
                     obs, rewards, done, env_info = env.step(action.cpu().numpy())
-                    obs = torch.tensor(obs).float().to(self.device)
+                    # from PIL import Image
+                    # img = Image.fromarray(obs, 'RGB')
+                    # img.show()
+                    # input()
+                    obs = torch.from_numpy(obs.copy()).float().to(self.device)
 
                     total_reward += rewards
 
@@ -215,6 +317,8 @@ class PPO2():
                 mb_rewards.append(rewards)
 
                 obs = torch.unsqueeze(obs, 0)
+                if(self.render):
+                    env.render()
 
             # # Convert memory buffer lists to numpy arrays
             # mb_obs = np.concatenate(mb_obs, 0).astype(np.float32)
@@ -338,7 +442,8 @@ class PPO2():
                         max_grad_norm = 0.5,
                         num_train_epochs = 4,
                         comet_experiment = None,
-                        summary_writer = None):
+                        summary_writer = None,
+                        render = False):
         """Entry point for training the policy.
 
         The training routine is based off the the PPO2 implementation provided in the stable-baselines repo.
@@ -381,6 +486,8 @@ class PPO2():
                 "entropy_coef" : entropy_coef
             }
             comet_experiment.log_parameters(hyper_params)
+
+        self.render = render
 
         # Total number of train cycles to run
         n_updates = int(time_steps // n_steps)
@@ -516,3 +623,18 @@ class PPO2():
 
     def load(self, load_dir):
         self.policy.load_state_dict(torch.load(os.path.join(load_dir, "policy.pt")))
+
+    def eval(self, obs):
+
+        # For n in range number of steps
+        with torch.set_grad_enabled(False):
+            # Convert obs to torch tensor
+            # if(not isinstance(env, FakeEnv)):
+            obs = torch.from_numpy(obs.copy()).float().to(self.device)
+            obs = torch.unsqueeze(obs, 0)
+
+            # Choose action
+            action, _, _, _ = self.forward(observation = obs)
+
+
+        return torch.squeeze(action)

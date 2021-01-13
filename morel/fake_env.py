@@ -16,12 +16,14 @@ class FakeEnv:
                         reward_std,
                         initial_obs_mean,
                         initial_obs_std,
+                        start_states,
                         timeout_steps = 300,
                         uncertain_penalty = -100,
                         device = "cuda:0"):
         self.dynamics_model = dynamics_model
 
         self.uncertain_penalty = uncertain_penalty
+        self.start_states = start_states
 
         self.input_dim = self.dynamics_model.input_dim
         self.output_dim = self.dynamics_model.output_dim
@@ -46,8 +48,12 @@ class FakeEnv:
         self.state = None
 
     def reset(self):
-        next_obs = torch.normal(self.initial_obs_mean, self.initial_obs_std)
+        idx = np.random.choice(self.start_states.shape[0])
+        next_obs = torch.tensor(self.start_states[idx]).float().to(self.device)
         self.state = (next_obs - self.obs_mean)/self.obs_std
+        # print("reset!")
+        # self.state = torch.normal(self.obs_mean, self.obs_std)
+        # next_obs = self.obs_mean + self.obs_std*self.state
         self.steps_elapsed = 0
 
         return next_obs
@@ -83,5 +89,7 @@ class FakeEnv:
         reward_out = torch.squeeze(reward_out)
 
         self.steps_elapsed += 1
+        # print("reward {}\tuncertain{}".format(reward_out, uncertain))
+        # input()
 
         return next_obs, reward_out, (uncertain or self.steps_elapsed > self.timeout_steps), {"HALT" : uncertain}
